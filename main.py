@@ -185,7 +185,12 @@ async def suicide(player_id: str = "test", level: int = 3):
 @app.post("/player/new_life")
 async def new_life():
     """创建新生命"""
-    result = create_new_life()
+    player = create_new_life()  # 返回 Player 对象
+    result = {
+        "玩家状态": player.model_dump(by_alias=True),  # 转成前端可用字典
+        "msg": "生灵降世",
+        "success": True
+    }
     return result
 
 
