@@ -596,7 +596,7 @@ class Item(str, Enum):
     SOCKS = "另一只袜子"
     EXPIRED_COUPON = "过期优惠券"
     # 武器
-    RUSTY_KNIFE = "一把生锈的铁刀"
+    RUSTY_KNIFE = "生锈的铁刀"
     SHARP_SPEAR = "尖刺长矛"
     HUNTING_BOW = "猎弓"
     STONE_AXE = "石斧"
