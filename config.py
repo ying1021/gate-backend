@@ -598,7 +598,7 @@ class Item(str, Enum):
     SOCKS = "另一只袜子"
     EXPIRED_COUPON = "过期优惠券"
     # 武器
-    RUSTY_KNIFE = "一把生锈的铁刀"
+    RUSTY_KNIFE = "生锈的铁刀"
     SHARP_SPEAR = "尖刺长矛"
     HUNTING_BOW = "猎弓"
     STONE_AXE = "石斧"
@@ -640,7 +640,7 @@ ITEM_INFO = {
     Item.IRON_AXE: {"稀有度": ItemRarity.JOKE, "分类": ItemCategory.JOKE_ITEM, "描述": "一把普普通通的铁斧头，就是它了。", "效果": {}},
     Item.USELESS_BOX: {"稀有度": ItemRarity.JOKE, "分类": ItemCategory.JOKE_ITEM, "描述": "一个盒子，打开后什么也没有。但盒子里写着：'惊喜！'", "效果": {}},
     Item.EXPIRED_COUPON: {"稀有度": ItemRarity.JOKE, "分类": ItemCategory.JOKE_ITEM, "描述": "一张已经过期的优惠券，上面写着'众生之门开业大酬宾，满100减5'。", "效果": {}},
-    Item.RUSTY_KNIFE: {"稀有度": ItemRarity.COMMON, "分类": ItemCategory.MATERIAL, "描述": "一把生锈的铁刀，+5伤害。", "效果": {"damage_bonus": 5}},
+    Item.RUSTY_KNIFE: {"稀有度": ItemRarity.COMMON, "分类": ItemCategory.MATERIAL, "描述": "生锈的铁刀，+5伤害。", "效果": {"damage_bonus": 5}},
     Item.SHARP_SPEAR: {"稀有度": ItemRarity.UNCOMMON, "分类": ItemCategory.TRAP, "描述": "削尖的长矛，+10伤害。", "效果": {"damage_bonus": 10}},
     Item.HUNTING_BOW: {"稀有度": ItemRarity.RARE, "分类": ItemCategory.TRAP, "描述": "一把猎弓，+15伤害。", "效果": {"damage_bonus": 15}},
     Item.STONE_AXE: {"稀有度": ItemRarity.UNCOMMON, "分类": ItemCategory.MATERIAL, "描述": "沉重的石斧，+12伤害。", "效果": {"damage_bonus": 12}},
