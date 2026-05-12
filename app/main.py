@@ -126,7 +126,7 @@ async def player_offline(player_id: str = "test"):
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     player.vital.vitality = 15
     player.vital.stamina = 20
     player.injury.skin_laceration = 60
@@ -142,7 +142,7 @@ async def player_death(player_id: str = "test", killer_id: str = "unknown"):
     from app.database import load_player as db_load
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     player.vital.vitality = 0
     result = handle_death(player, killer_id)
     return result
@@ -154,7 +154,7 @@ async def suicide(player_id: str = "test", level: int = 3):
     from app.database import load_player as db_load
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     result = commit_suicide(player)
     return result
 
@@ -181,7 +181,7 @@ async def player_red_name(player_id: str = "test"):
     from app.database import load_player as db_load
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     if not hasattr(player, 'same_category_kills'):
         player.same_category_kills = 10
         player.red_name = False
@@ -196,7 +196,7 @@ async def explore(player_id: str = "test", map_region: str = "城郊青草地"):
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     result = explore_map(player, map_region)
     db_save(player)
     return result
@@ -208,7 +208,7 @@ async def fishing(player_id: str = "test", map_region: str = "湖滨芦苇荡"):
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     result = go_fishing(player, map_region)
     db_save(player)
     return result
@@ -220,7 +220,7 @@ async def fairy_choice(player_id: str = "test", choice: str = "铁斧头"):
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     result = resolve_fairy_choice(player, choice)
     db_save(player)
     return result
@@ -237,7 +237,7 @@ async def random_event(
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     result = trigger_random_event(player, terrain_str, weather_str, map_region)
     db_save(player)
     return result
@@ -256,7 +256,7 @@ async def inventory_add(player_id: str = "test", item_name: str = "野果", quan
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     result = add_to_inventory(player, item_name, quantity)
     db_save(player)
     result["背包总览"] = view_inventory(player)
@@ -269,7 +269,7 @@ async def inventory_remove(player_id: str = "test", item_name: str = "野果", q
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     add_to_inventory(player, item_name, 3)
     result = remove_from_inventory(player, item_name, quantity)
     db_save(player)
@@ -283,7 +283,7 @@ async def inventory_view(player_id: str = "test"):
     from app.database import load_player as db_load
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
         add_to_inventory(player, "野果", 2)
         add_to_inventory(player, "草药绷带", 1)
     result = view_inventory(player)
@@ -296,7 +296,7 @@ async def inventory_use(player_id: str = "test", item_name: str = "草药绷带"
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
         add_to_inventory(player, "野果", 2)
         add_to_inventory(player, "草药绷带", 2)
     result = use_item(player, item_name)
@@ -314,7 +314,7 @@ async def trade_list(
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     add_to_inventory(player, offer_item, offer_qty + 2)
     result = list_trade(player, offer_item, offer_qty, want_item, want_qty)
     result["背包"] = view_inventory(player)
@@ -334,7 +334,7 @@ async def trade_accept(buyer_id: str = "buyer1", trade_id: str = "trade_0001"):
     from app.database import load_player as db_load, save_player as db_save
     buyer = db_load(buyer_id)
     if not buyer:
-        buyer = Player(id=buyer_id, species=Species.HUMAN)
+        buyer = Player(id=buyer_id, species=Species.TIGER)
     add_to_inventory(buyer, "草药绷带", 5)
     result = accept_trade(buyer, trade_id)
     result["背包"] = view_inventory(buyer)
@@ -347,7 +347,7 @@ async def settlement_can_build(player_id: str = "test", building_str: str = "简
     from app.database import load_player as db_load
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     building = Building(building_str)
     result = can_build(player, building)
     return result
@@ -359,7 +359,7 @@ async def settlement_build(player_id: str = "test", building_str: str = "简易�
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     building = Building(building_str)
     result = build(player, building)
     db_save(player)
@@ -373,7 +373,7 @@ async def settlement_view(player_id: str = "test"):
     from app.database import load_player as db_load
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     result = view_settlement(player)
     return result
 
@@ -384,7 +384,7 @@ async def settlement_dismantle(player_id: str = "test", building_str: str = "木
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     result = dismantle(player, building_str)
     db_save(player)
     result["背包"] = view_inventory(player)
@@ -407,7 +407,7 @@ async def shop_buy(
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     result = buy_item(player, map_region, shop_name, item_name)
     db_save(player)
     return result
@@ -419,7 +419,7 @@ async def map_move(player_id: str = "test", target_map: str = "近郊小树林")
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     result = move_to_map(player, target_map)
     if result.get("成功"):
         db_save(player)
@@ -439,7 +439,7 @@ async def explore_map_endpoint(player_id: str = "test", map_region: str = "城�
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     player.current_map = map_region
     result = explore_map_node(player, map_region)
     db_save(player)
@@ -452,7 +452,7 @@ async def visible_maps(player_id: str = "test", map_region: str = "城郊青草�
     from app.database import load_player as db_load
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     player.current_map = map_region
     result = get_visible_maps(player, map_region)
     return result
@@ -464,7 +464,7 @@ async def stall_open(player_id: str = "test"):
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     player.current_map = "城郊青草地"
     add_to_inventory(player, "野果", 3)
     add_to_inventory(player, "木材", 5)
@@ -479,7 +479,7 @@ async def stall_close(player_id: str = "test"):
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     player.current_map = "城郊青草地"
     result = close_stall(player)
     return result
@@ -491,7 +491,7 @@ async def city_check(player_id: str = "test", action: str = "撕咬", map_region
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     player.current_map = map_region
     result = check_city_rules(player, action, map_region)
     if result["违规"]:
@@ -506,7 +506,7 @@ async def instance_enter(player_id: str = "test", map_name: str = "幻境心林"
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     result = enter_instance(player, map_name)
     db_save(player)
     return result
@@ -518,7 +518,7 @@ async def instance_tick_test(player_id: str = "test", map_name: str = "幻境心
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     player.current_map = map_name
     player.instance_ticks = 5
     result = instance_tick(player, map_name)
@@ -532,7 +532,7 @@ async def instance_exit(player_id: str = "test"):
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     player.current_map = "幻境心林"
     result = exit_instance(player)
     db_save(player)
@@ -545,7 +545,7 @@ async def plant_growth(player_id: str = "test", weather_str: str = "晴天", has
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     result = tick_plant_growth(player, weather_str, has_greenhouse)
     db_save(player)
     result["生长详情"] = get_plant_growth_stage(player)
@@ -558,7 +558,7 @@ async def plant_harvest(player_id: str = "test"):
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.HUMAN)
+        player = Player(id=player_id, species=Species.TIGER)
     player.plant_growth = {"阶段": "成熟", "进度": 10, "总Tick": 30, "已收获": False}
     result = harvest_plant(player)
     db_save(player)
