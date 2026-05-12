@@ -32,15 +32,38 @@ async def root():
 @app.post("/player/create")
 async def create_player():
     """创建一个新玩家，随机物种和天赋"""
+    from app.database import save_player as db_save
+    
+    chosen_species = random.choice(list(Species))
+    chosen_talent = random.choice(list(Talent))
+    
     player = Player(
         id=str(uuid.uuid4())[:8],
-        species=random.choice(list(Species)),
-        talent=random.choice(list(Talent)),
+        species=chosen_species,
+        talent=chosen_talent,
     )
+    
+    # 初始化生命值和其他基础属性
+    if not player.vital:
+        player.vital = {
+            '体力耐力': 100,
+            '饱腹值': 100,
+            '精神状态': 100
+        }
+    if not player.inventory:
+        player.inventory = []
+    if not player.current_map:
+        player.current_map = "城郊青草地"
+    
+    # 保存到数据库
+    db_save(player)
+    
     return {
         "msg": "生灵降世",
+        "success": True,
         "player": player.model_dump(by_alias=True)
     }
+
 
 
 @app.post("/game/tick")
