@@ -297,11 +297,15 @@ async def inventory_use(
 ):
     """使用道具"""
     from app.database import load_player as db_load, save_player as db_save
-    from app.services.game_service import use_item, add_to_inventory
+    from app.services.game_service import use_item
 
     player = db_load(player_id)
     if not player:
         return {"msg": f"玩家 {player_id} 不存在", "成功": False}
+
+    # 确认背包有道具
+    if item_name not in player.inventory or player.inventory[item_name] <= 0:
+        return {"msg": f"你没有{item_name}", "成功": False}
 
     result = use_item(player, item_name)
     result["使用后状态"] = player.model_dump(by_alias=True)
