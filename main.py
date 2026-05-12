@@ -291,17 +291,21 @@ async def inventory_view(player_id: str = "test"):
 
 
 @app.post("/inventory/use")
-async def inventory_use(player_id: str = "test", item_name: str = "草药绷带"):
+async def inventory_use(
+    player_id: str = "test",
+    item_name: str = "草药绷带",
+):
     """使用道具"""
     from app.database import load_player as db_load, save_player as db_save
+    from app.services.game_service import use_item, add_to_inventory
+
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.TIGER)
-        add_to_inventory(player, "野果", 2)
-        add_to_inventory(player, "草药绷带", 2)
+        return {"msg": f"玩家 {player_id} 不存在", "成功": False}
+
     result = use_item(player, item_name)
-    db_save(player)
     result["使用后状态"] = player.model_dump(by_alias=True)
+    db_save(player)
     return result
 
 
