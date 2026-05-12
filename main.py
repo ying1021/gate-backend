@@ -33,37 +33,39 @@ async def root():
 async def create_player():
     """创建一个新玩家，随机物种和天赋"""
     from app.database import save_player as db_save
-    
+
     chosen_species = random.choice(list(Species))
     chosen_talent = random.choice(list(Talent))
-    
+
     player = Player(
         id=str(uuid.uuid4())[:8],
         species=chosen_species,
         talent=chosen_talent,
     )
-    
+
     # 初始化生命值和其他基础属性
     if not player.vital:
         player.vital = {
+            '生命机能': 100,
             '体力耐力': 100,
             '饱腹值': 100,
-            '精神状态': 100
+            '精神状态': 100,
         }
     if not player.inventory:
-        player.inventory = []
+        player.inventory = {}
     if not player.current_map:
         player.current_map = "城郊青草地"
-    
+
     # 保存到数据库
     db_save(player)
-    
+
+    # ✅ 关键修复：返回前端期望的字段名
+    player_dict = player.model_dump(by_alias=True)
     return {
         "msg": "生灵降世",
         "success": True,
-        "player": player.model_dump(by_alias=True)
+        "玩家状态": player_dict  # ✅ 改为 '玩家状态'
     }
-
 
 
 @app.post("/game/tick")
@@ -185,12 +187,7 @@ async def suicide(player_id: str = "test", level: int = 3):
 @app.post("/player/new_life")
 async def new_life():
     """创建新生命"""
-    player = create_new_life()  # 返回 Player 对象
-    result = {
-        "玩家状态": player.model_dump(by_alias=True),  # 转成前端可用字典
-        "msg": "生灵降世",
-        "success": True
-    }
+    result = create_new_life()
     return result
 
 
@@ -309,36 +306,57 @@ async def inventory_remove(player_id: str = "test", item_name: str = "野果", q
 async def inventory_view(player_id: str = "test"):
     """查看背包"""
     from app.database import load_player as db_load
+
+    # ✅ 从数据库加载玩家
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.TIGER)
-        add_to_inventory(player, "野果", 2)
-        add_to_inventory(player, "草药绷带", 1)
-    result = view_inventory(player)
-    return result
+        return {
+            "success": False,
+            "背包": {},
+            "msg": "玩家不存在"
+        }
+
+    return {
+        "success": True,
+        "背包": player.inventory or {},
+        "玩家状态": player.model_dump(by_alias=True)
+    }
+
 
 
 @app.post("/inventory/use")
-async def inventory_use(
-    player_id: str = "test",
-    item_name: str = "草药绷带",
-):
-    """使用道具"""
+async def inventory_use(player_id: str = "test", item_name: str = ""):
+    """使用背包道具"""
     from app.database import load_player as db_load, save_player as db_save
-    from app.services.game_service import use_item
+    from app.services.game_service import use_item  # ✅ 确保导入正确
 
+    # ✅ 必须从数据库加载真实玩家数据
     player = db_load(player_id)
     if not player:
-        return {"msg": f"玩家 {player_id} 不存在", "成功": False}
+        return {
+            "success": False,
+            "msg": "玩家不存在",
+            "error_code": "PLAYER_NOT_FOUND"
+        }
 
-    # 确认背包有道具
-    if item_name not in player.inventory or player.inventory[item_name] <= 0:
-        return {"msg": f"你没有{item_name}", "成功": False}
+    # 检查道具是否存在
+    if not player.inventory or item_name not in player.inventory or player.inventory[item_name] <= 0:
+        return {
+            "success": False,
+            "msg": f"你没有'{item_name}'",
+            "error_code": "ITEM_NOT_FOUND"
+        }
 
+    # 调用使用逻辑
     result = use_item(player, item_name)
-    result["使用后状态"] = player.model_dump(by_alias=True)
+
+    # ✅ 使用后保存玩家数据
     db_save(player)
+
+    # 返回结果包含更新后的玩家状态
+    result["玩家状态"] = player.model_dump(by_alias=True)
     return result
+
 
 
 @app.post("/trade/list")
@@ -498,10 +516,15 @@ async def visible_maps(player_id: str = "test", map_region: str = "城郊青草�
 async def stall_open(player_id: str = "test"):
     """开启营业"""
     from app.database import load_player as db_load, save_player as db_save
+    from app.services.game_service import get_shops_for_map
     player = db_load(player_id)
     if not player:
         player = Player(id=player_id, species=Species.TIGER)
-    player.current_map = "城郊青草地"
+    # 删除 player.current_map = "城郊青草地"
+    current_map = player.current_map or "城郊青草地"
+    shop_info = get_shops_for_map(current_map)
+    if not shop_info.get("有商店"):
+        return {"msg": "当前地图没有商店，无法营业。", "成功": False}
     add_to_inventory(player, "野果", 3)
     add_to_inventory(player, "木材", 5)
     items = [{"名称": "野果", "数量": 2, "价格": "石块x1"}, {"名称": "木材", "数量": 3, "价格": "野果x1"}]
@@ -516,7 +539,6 @@ async def stall_close(player_id: str = "test"):
     player = db_load(player_id)
     if not player:
         player = Player(id=player_id, species=Species.TIGER)
-    player.current_map = "城郊青草地"
     result = close_stall(player)
     return result
 
