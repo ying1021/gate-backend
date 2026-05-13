@@ -32,14 +32,29 @@ async def root():
 @app.post("/player/create")
 async def create_player():
     """创建一个新玩家，随机物种和天赋"""
+    from app.database import save_player as db_save
+
+    chosen_species = random.choice(list(Species))
+    chosen_talent = random.choice(list(Talent))
+
     player = Player(
         id=str(uuid.uuid4())[:8],
-        species=random.choice(list(Species)),
-        talent=random.choice(list(Talent)),
+        species=chosen_species,
+        talent=chosen_talent,
     )
+
+    if not player.inventory:
+        player.inventory = {"野果": 2, "草药绷带": 1, "生锈的铁刀": 1}
+    if not player.current_map:
+        player.current_map = "城郊青草地"
+
+    db_save(player)
+
+    player_dict = player.model_dump(by_alias=True)
     return {
         "msg": "生灵降世",
-        "player": player.model_dump(by_alias=True)
+        "success": True,
+        "玩家状态": player_dict
     }
 
 
@@ -99,7 +114,6 @@ from app.services.game_service import (
     explore_map, go_fishing, resolve_fairy_choice,
     trigger_random_event, get_kill_loot,
     add_to_inventory, remove_from_inventory, view_inventory, use_item,
-    list_trade, browse_trades, accept_trade,
     can_build, build, view_settlement, dismantle,
     get_shops_for_map, buy_item,
     move_to_map, get_available_moves,
@@ -122,15 +136,11 @@ async def player_online(player_id: str = "test"):
 
 @app.post("/player/offline")
 async def player_offline(player_id: str = "test"):
-    """离线保命"""
+    """离线保存"""
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
         player = Player(id=player_id, species=Species.TIGER)
-    player.vital.vitality = 15
-    player.vital.stamina = 20
-    player.injury.skin_laceration = 60
-    player.injury.blood_loss = 40
     result = go_offline(player)
     db_save(player)
     return result
@@ -182,10 +192,6 @@ async def player_red_name(player_id: str = "test"):
     player = db_load(player_id)
     if not player:
         player = Player(id=player_id, species=Species.TIGER)
-    if not hasattr(player, 'same_category_kills'):
-        player.same_category_kills = 10
-        player.red_name = False
-        player.penance_ticks = 0
     result = check_red_name(player)
     return result
 
@@ -270,7 +276,6 @@ async def inventory_remove(player_id: str = "test", item_name: str = "野果", q
     player = db_load(player_id)
     if not player:
         player = Player(id=player_id, species=Species.TIGER)
-    add_to_inventory(player, item_name, 3)
     result = remove_from_inventory(player, item_name, quantity)
     db_save(player)
     result["背包总览"] = view_inventory(player)
@@ -283,61 +288,26 @@ async def inventory_view(player_id: str = "test"):
     from app.database import load_player as db_load
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.TIGER)
-        add_to_inventory(player, "野果", 2)
-        add_to_inventory(player, "草药绷带", 1)
-    result = view_inventory(player)
-    return result
+        return {"success": False, "背包": {}, "msg": "玩家不存在"}
+    return {
+        "success": True,
+        "背包": player.inventory or {},
+        "玩家状态": player.model_dump(by_alias=True)
+    }
 
 
 @app.post("/inventory/use")
-async def inventory_use(player_id: str = "test", item_name: str = "草药绷带"):
-    """使用道具"""
+async def inventory_use(player_id: str = "test", item_name: str = ""):
+    """使用背包道具"""
     from app.database import load_player as db_load, save_player as db_save
     player = db_load(player_id)
     if not player:
-        player = Player(id=player_id, species=Species.TIGER)
-        add_to_inventory(player, "野果", 2)
-        add_to_inventory(player, "草药绷带", 2)
+        return {"success": False, "msg": "玩家不存在", "error_code": "PLAYER_NOT_FOUND"}
+    if not player.inventory or item_name not in player.inventory or player.inventory[item_name] <= 0:
+        return {"success": False, "msg": f"你没有'{item_name}'", "error_code": "ITEM_NOT_FOUND"}
     result = use_item(player, item_name)
     db_save(player)
-    result["使用后状态"] = player.model_dump(by_alias=True)
-    return result
-
-
-@app.post("/trade/list")
-async def trade_list(
-    player_id: str = "seller1", offer_item: str = "兽皮", offer_qty: int = 3,
-    want_item: str = "草药绷带", want_qty: int = 2,
-):
-    """挂交易单"""
-    from app.database import load_player as db_load, save_player as db_save
-    player = db_load(player_id)
-    if not player:
-        player = Player(id=player_id, species=Species.TIGER)
-    add_to_inventory(player, offer_item, offer_qty + 2)
-    result = list_trade(player, offer_item, offer_qty, want_item, want_qty)
-    result["背包"] = view_inventory(player)
-    return result
-
-
-@app.get("/trade/browse")
-async def trade_browse():
-    """浏览交易板"""
-    result = browse_trades()
-    return result
-
-
-@app.post("/trade/accept")
-async def trade_accept(buyer_id: str = "buyer1", trade_id: str = "trade_0001"):
-    """接受交易"""
-    from app.database import load_player as db_load, save_player as db_save
-    buyer = db_load(buyer_id)
-    if not buyer:
-        buyer = Player(id=buyer_id, species=Species.TIGER)
-    add_to_inventory(buyer, "草药绷带", 5)
-    result = accept_trade(buyer, trade_id)
-    result["背包"] = view_inventory(buyer)
+    result["玩家状态"] = player.model_dump(by_alias=True)
     return result
 
 
@@ -462,10 +432,14 @@ async def visible_maps(player_id: str = "test", map_region: str = "城郊青草�
 async def stall_open(player_id: str = "test"):
     """开启营业"""
     from app.database import load_player as db_load, save_player as db_save
+    from app.services.game_service import get_shops_for_map
     player = db_load(player_id)
     if not player:
         player = Player(id=player_id, species=Species.TIGER)
-    player.current_map = "城郊青草地"
+    current_map = player.current_map or "城郊青草地"
+    shop_info = get_shops_for_map(current_map)
+    if not shop_info.get("有商店"):
+        return {"msg": "当前地图没有商店，无法营业。", "成功": False}
     add_to_inventory(player, "野果", 3)
     add_to_inventory(player, "木材", 5)
     items = [{"名称": "野果", "数量": 2, "价格": "石块x1"}, {"名称": "木材", "数量": 3, "价格": "野果x1"}]
@@ -480,7 +454,6 @@ async def stall_close(player_id: str = "test"):
     player = db_load(player_id)
     if not player:
         player = Player(id=player_id, species=Species.TIGER)
-    player.current_map = "城郊青草地"
     result = close_stall(player)
     return result
 
