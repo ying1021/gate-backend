@@ -212,3 +212,33 @@ def load_settlement(player_id):
     rows = cursor.fetchall()
     return {row["building_name"]: row["quantity"] for row in rows} if rows else {}
 
+async def save_death_record(player_id: str, species_name: str, level: int, killer_id: str = None):
+    """保存死亡记录"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS death_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id TEXT,
+            species TEXT,
+            level INTEGER,
+            killer_id TEXT,
+            death_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        INSERT INTO death_records (player_id, species, level, killer_id)
+        VALUES (?, ?, ?, ?)
+    """, (player_id, species_name, level, killer_id))
+    conn.commit()
+
+
+async def delete_player_from_db(player_id: str):
+    """删除玩家数据"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM player_vitals WHERE player_id = ?", (player_id,))
+    cursor.execute("DELETE FROM player_injuries WHERE player_id = ?", (player_id,))
+    cursor.execute("DELETE FROM settlement_buildings WHERE player_id = ?", (player_id,))
+    cursor.execute("DELETE FROM players WHERE id = ?", (player_id,))
+    conn.commit()
