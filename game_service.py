@@ -560,6 +560,11 @@ def handle_death(player: Player, killer_id: str = None):
     level = player.level
     player_id = player.id
 
+    # 存储死亡冷却记录到内存
+    _player_storage[f"_death_{player_id}"] = {
+        "death_time": datetime.now().isoformat()
+    }
+
     # 异步保存死亡记录
     asyncio.create_task(save_death_record(player_id, species_name, level, killer_id))
     # 异步删除玩家数据
