@@ -57,6 +57,7 @@ class Species(str, Enum):
     SNAKE = "蛇"
     # 杂食性动物
     BEAR = "熊"
+    HUMAN = "人类"
     PIG = "猪"
     FOX = "狐"
     RACCOON = "浣熊"
@@ -185,6 +186,7 @@ SPECIES_TO_CATEGORY = {
     Species.SNAKE: SpeciesCategory.CARNIVORE,
     # 杂食性动物
     Species.BEAR: SpeciesCategory.OMNIVORE,
+    Species.HUMAN: SpeciesCategory.OMNIVORE,
     Species.PIG: SpeciesCategory.OMNIVORE,
     Species.FOX: SpeciesCategory.OMNIVORE,
     Species.RACCOON: SpeciesCategory.OMNIVORE,
