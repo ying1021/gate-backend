@@ -26,6 +26,7 @@ from app.core.config import (
 )
 from app.models.player import Player
 # 内存存储
+# test
 _player_storage: dict[str, dict] = {}
 _settlement_storage: dict[str, dict] = {}
 
