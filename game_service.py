@@ -499,22 +499,9 @@ DEATH_COOLDOWN = 60
 
 def go_offline(player: Player) -> dict:
     """
-    主动离线（保命机制）
-    规则：残重伤、危机时主动离线，保留全部数据
+    主动离线，保留全部数据
     """
     save_result = db_save_player(player)
-
-    # 恢复全部四维到安全值（离线代表脱离危险）
-    player.vital.vitality = min(150, player.vital.vitality + 30)
-    player.vital.stamina = min(150, player.vital.stamina + 30)
-    player.vital.satiety = min(150, player.vital.satiety + 20)
-    player.vital.sanity = min(150, player.vital.sanity + 20)
-
-    # 轻度损伤自然恢复
-    for field in player.injury.model_fields:
-        current = getattr(player.injury, field)
-        setattr(player.injury, field, max(0, current - 10))
-
     player.is_online = False
 
     # 再次保存恢复后的数据
