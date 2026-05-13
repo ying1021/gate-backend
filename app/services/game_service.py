@@ -200,6 +200,9 @@ def add_exp(player: Player, exp: float) -> dict:
             player.vital.stamina = min(150, player.vital.stamina + 20)
             player.vital.satiety = min(150, player.vital.satiety + 15)
             player.vital.sanity = min(150, player.vital.sanity + 10)
+            # 植物类每级额外+2生命
+            if SPECIES_TO_CATEGORY.get(player.species) == SpeciesCategory.PLANT:
+                player.vital.vitality = min(200, player.vital.vitality + 2)
         else:
             break
 
