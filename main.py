@@ -124,7 +124,6 @@ from app.services.game_service import (
     explore_map, go_fishing, resolve_fairy_choice,
     trigger_random_event, get_kill_loot,
     add_to_inventory, remove_from_inventory, view_inventory, use_item,
-    list_trade, browse_trades, accept_trade,
     can_build, build, view_settlement, dismantle,
     get_shops_for_map, buy_item,
     move_to_map, get_available_moves,
