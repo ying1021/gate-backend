@@ -3,6 +3,7 @@
 环境消耗、等级经验、战斗判定等
 """
 import random
+import random as rand
 import asyncio
 from typing import Optional
 import uuid
