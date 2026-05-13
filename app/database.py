@@ -7,13 +7,19 @@ import json
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "gate_of_all_living.db")
 
+from sqlite3 import connect
+from threading import Lock
+
+_conn_pool = None
+_conn_lock = Lock()
 
 def get_connection():
-    """获取数据库连接"""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    global _conn_pool
+    if _conn_pool is None:
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        _conn_pool = sqlite3.connect(DB_PATH, check_same_thread=False)
+        _conn_pool.row_factory = sqlite3.Row
+    return _conn_pool
 
 
 def init_db():
@@ -34,6 +40,7 @@ def init_db():
             inventory TEXT DEFAULT '{}',
             settlement TEXT DEFAULT '{}',
             plant_growth TEXT DEFAULT '{}',
+            quests TEXT DEFAULT '{}',
             specializations TEXT DEFAULT '{}',
             debuffs TEXT DEFAULT '[]',
             instance_ticks INTEGER DEFAULT 0,
@@ -69,22 +76,6 @@ def init_db():
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS trade_listings (
-            id TEXT PRIMARY KEY,
-            seller_id TEXT,
-            seller_species TEXT,
-            offer_item TEXT,
-            offer_qty INTEGER,
-            want_item TEXT,
-            want_qty INTEGER,
-            status TEXT DEFAULT 'active',
-            buyer_id TEXT,
-            buyer_species TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    cursor.execute("""
         CREATE TABLE IF NOT EXISTS settlement_buildings (
             player_id TEXT,
             building_name TEXT,
@@ -95,7 +86,6 @@ def init_db():
     """)
 
     conn.commit()
-    conn.close()
     print("[数据库] 初始化完成")
 
 
@@ -106,8 +96,9 @@ def save_player(player):
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT OR REPLACE INTO players (id, species, level, talent, exp, spec_points, current_map, is_online, inventory, settlement, plant_growth, specializations, debuffs, instance_ticks, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT OR REPLACE INTO players (id, species, level, talent, exp, spec_points, current_map, 
+        is_online, inventory, settlement, plant_growth, quests, specializations, debuffs, instance_ticks, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     """, (
         player.id,
         str(player.species.value) if hasattr(player.species, 'value') else str(player.species),
@@ -120,6 +111,7 @@ def save_player(player):
         json.dumps(getattr(player, 'inventory', {}) or {}),
         json.dumps(getattr(player, 'settlement', {}) or {}),
         json.dumps(getattr(player, 'plant_growth', {}) or {}),
+        json.dumps(getattr(player, 'quests', {}) or {}),
         json.dumps(getattr(player, 'specializations', {}) or {}),
         json.dumps(getattr(player, 'debuffs', []) or []),
         getattr(player, 'instance_ticks', 0),
@@ -141,7 +133,6 @@ def save_player(player):
     ))
 
     conn.commit()
-    conn.close()
     return True
 
 
@@ -153,7 +144,6 @@ def load_player(player_id):
     cursor.execute("SELECT * FROM players WHERE id = ?", (player_id,))
     row = cursor.fetchone()
     if not row:
-        conn.close()
         return None
 
     cursor.execute("SELECT * FROM player_vitals WHERE player_id = ?", (player_id,))
@@ -161,8 +151,6 @@ def load_player(player_id):
 
     cursor.execute("SELECT * FROM player_injuries WHERE player_id = ?", (player_id,))
     injury_row = cursor.fetchone()
-
-    conn.close()
 
     from app.models.player import Player, VitalStats, InjuryState
     from app.core.config import Species
@@ -184,6 +172,7 @@ def load_player(player_id):
         spec_points=row["spec_points"] or 0,
         current_map=row["current_map"],
         is_online=bool(row["is_online"]),
+        quests=json.loads(row["quests"] or "{}"),
         inventory=json.loads(row["inventory"] or "{}"),
         settlement=json.loads(row["settlement"] or "{}"),
         plant_growth=json.loads(row["plant_growth"] or "{}"),
@@ -230,7 +219,6 @@ def save_settlement(player_id, buildings):
             VALUES (?, ?, ?)
         """, (player_id, name, qty))
     conn.commit()
-    conn.close()
 
 
 def load_settlement(player_id):
@@ -239,5 +227,36 @@ def load_settlement(player_id):
     cursor = conn.cursor()
     cursor.execute("SELECT building_name, quantity FROM settlement_buildings WHERE player_id = ?", (player_id,))
     rows = cursor.fetchall()
-    conn.close()
     return {row["building_name"]: row["quantity"] for row in rows} if rows else {}
+
+
+async def save_death_record(player_id: str, species_name: str, level: int, killer_id: str = None):
+    """保存死亡记录"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS death_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id TEXT,
+            species TEXT,
+            level INTEGER,
+            killer_id TEXT,
+            death_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        INSERT INTO death_records (player_id, species, level, killer_id)
+        VALUES (?, ?, ?, ?)
+    """, (player_id, species_name, level, killer_id))
+    conn.commit()
+
+
+async def delete_player_from_db(player_id: str):
+    """删除玩家数据"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM player_vitals WHERE player_id = ?", (player_id,))
+    cursor.execute("DELETE FROM player_injuries WHERE player_id = ?", (player_id,))
+    cursor.execute("DELETE FROM settlement_buildings WHERE player_id = ?", (player_id,))
+    cursor.execute("DELETE FROM players WHERE id = ?", (player_id,))
+    conn.commit()
