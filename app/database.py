@@ -1,25 +1,22 @@
 """
-数据库模块 - SQLite 持久化
+数据库模块 - PostgreSQL 持久化
 """
-import sqlite3
 import os
 import json
+import psycopg2
+import psycopg2.extras
+from urllib.parse import urlparse
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "gate_of_all_living.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
-from sqlite3 import connect
-from threading import Lock
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL 环境变量未设置")
 
-_conn_pool = None
-_conn_lock = Lock()
 
 def get_connection():
-    global _conn_pool
-    if _conn_pool is None:
-        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-        _conn_pool = sqlite3.connect(DB_PATH, check_same_thread=False)
-        _conn_pool.row_factory = sqlite3.Row
-    return _conn_pool
+    """获取数据库连接"""
+    conn = psycopg2.connect(DATABASE_URL)
+    return conn
 
 
 def init_db():
@@ -86,19 +83,35 @@ def init_db():
     """)
 
     conn.commit()
+    conn.close()
     print("[数据库] 初始化完成")
 
 
 def save_player(player):
     """保存玩家数据到数据库"""
-    from app.models.player import Player as P
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT OR REPLACE INTO players (id, species, level, talent, exp, spec_points, current_map, 
+        INSERT INTO players (id, species, level, talent, exp, spec_points, current_map, 
         is_online, inventory, settlement, plant_growth, quests, specializations, debuffs, instance_ticks, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (id) DO UPDATE SET
+            species = EXCLUDED.species,
+            level = EXCLUDED.level,
+            talent = EXCLUDED.talent,
+            exp = EXCLUDED.exp,
+            spec_points = EXCLUDED.spec_points,
+            current_map = EXCLUDED.current_map,
+            is_online = EXCLUDED.is_online,
+            inventory = EXCLUDED.inventory,
+            settlement = EXCLUDED.settlement,
+            plant_growth = EXCLUDED.plant_growth,
+            quests = EXCLUDED.quests,
+            specializations = EXCLUDED.specializations,
+            debuffs = EXCLUDED.debuffs,
+            instance_ticks = EXCLUDED.instance_ticks,
+            updated_at = CURRENT_TIMESTAMP
     """, (
         player.id,
         str(player.species.value) if hasattr(player.species, 'value') else str(player.species),
@@ -118,13 +131,27 @@ def save_player(player):
     ))
 
     cursor.execute("""
-        INSERT OR REPLACE INTO player_vitals (player_id, vitality, stamina, satiety, sanity)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO player_vitals (player_id, vitality, stamina, satiety, sanity)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (player_id) DO UPDATE SET
+            vitality = EXCLUDED.vitality,
+            stamina = EXCLUDED.stamina,
+            satiety = EXCLUDED.satiety,
+            sanity = EXCLUDED.sanity
     """, (player.id, player.vital.vitality, player.vital.stamina, player.vital.satiety, player.vital.sanity))
 
     cursor.execute("""
-        INSERT OR REPLACE INTO player_injuries (player_id, skin_laceration, fracture, blood_loss, poison, asphyxia, frostbite, burn, sensory_damage)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO player_injuries (player_id, skin_laceration, fracture, blood_loss, poison, asphyxia, frostbite, burn, sensory_damage)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (player_id) DO UPDATE SET
+            skin_laceration = EXCLUDED.skin_laceration,
+            fracture = EXCLUDED.fracture,
+            blood_loss = EXCLUDED.blood_loss,
+            poison = EXCLUDED.poison,
+            asphyxia = EXCLUDED.asphyxia,
+            frostbite = EXCLUDED.frostbite,
+            burn = EXCLUDED.burn,
+            sensory_damage = EXCLUDED.sensory_damage
     """, (
         player.id,
         player.injury.skin_laceration, player.injury.fracture, player.injury.blood_loss,
@@ -133,24 +160,28 @@ def save_player(player):
     ))
 
     conn.commit()
+    conn.close()
     return True
 
 
 def load_player(player_id):
     """从数据库加载玩家"""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    cursor.execute("SELECT * FROM players WHERE id = ?", (player_id,))
+    cursor.execute("SELECT * FROM players WHERE id = %s", (player_id,))
     row = cursor.fetchone()
     if not row:
+        conn.close()
         return None
 
-    cursor.execute("SELECT * FROM player_vitals WHERE player_id = ?", (player_id,))
+    cursor.execute("SELECT * FROM player_vitals WHERE player_id = %s", (player_id,))
     vital_row = cursor.fetchone()
 
-    cursor.execute("SELECT * FROM player_injuries WHERE player_id = ?", (player_id,))
+    cursor.execute("SELECT * FROM player_injuries WHERE player_id = %s", (player_id,))
     injury_row = cursor.fetchone()
+
+    conn.close()
 
     from app.models.player import Player, VitalStats, InjuryState
     from app.core.config import Species
@@ -181,7 +212,6 @@ def load_player(player_id):
         instance_ticks=row["instance_ticks"] or 0,
     )
 
-    # 天赋
     talent_str = row["talent"]
     if talent_str:
         from app.models.player import Talent
@@ -215,18 +245,21 @@ def save_settlement(player_id, buildings):
     cursor = conn.cursor()
     for name, qty in buildings.items():
         cursor.execute("""
-            INSERT OR REPLACE INTO settlement_buildings (player_id, building_name, quantity)
-            VALUES (?, ?, ?)
+            INSERT INTO settlement_buildings (player_id, building_name, quantity)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (player_id, building_name) DO UPDATE SET quantity = EXCLUDED.quantity
         """, (player_id, name, qty))
     conn.commit()
+    conn.close()
 
 
 def load_settlement(player_id):
     """加载营地建筑"""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT building_name, quantity FROM settlement_buildings WHERE player_id = ?", (player_id,))
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT building_name, quantity FROM settlement_buildings WHERE player_id = %s", (player_id,))
     rows = cursor.fetchall()
+    conn.close()
     return {row["building_name"]: row["quantity"] for row in rows} if rows else {}
 
 
@@ -236,7 +269,7 @@ async def save_death_record(player_id: str, species_name: str, level: int, kille
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS death_records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             player_id TEXT,
             species TEXT,
             level INTEGER,
@@ -246,17 +279,19 @@ async def save_death_record(player_id: str, species_name: str, level: int, kille
     """)
     cursor.execute("""
         INSERT INTO death_records (player_id, species, level, killer_id)
-        VALUES (?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s)
     """, (player_id, species_name, level, killer_id))
     conn.commit()
+    conn.close()
 
 
 async def delete_player_from_db(player_id: str):
     """删除玩家数据"""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM player_vitals WHERE player_id = ?", (player_id,))
-    cursor.execute("DELETE FROM player_injuries WHERE player_id = ?", (player_id,))
-    cursor.execute("DELETE FROM settlement_buildings WHERE player_id = ?", (player_id,))
-    cursor.execute("DELETE FROM players WHERE id = ?", (player_id,))
+    cursor.execute("DELETE FROM player_vitals WHERE player_id = %s", (player_id,))
+    cursor.execute("DELETE FROM player_injuries WHERE player_id = %s", (player_id,))
+    cursor.execute("DELETE FROM settlement_buildings WHERE player_id = %s", (player_id,))
+    cursor.execute("DELETE FROM players WHERE id = %s", (player_id,))
     conn.commit()
+    conn.close()
