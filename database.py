@@ -76,22 +76,6 @@ def init_db():
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS trade_listings (
-            id TEXT PRIMARY KEY,
-            seller_id TEXT,
-            seller_species TEXT,
-            offer_item TEXT,
-            offer_qty INTEGER,
-            want_item TEXT,
-            want_qty INTEGER,
-            status TEXT DEFAULT 'active',
-            buyer_id TEXT,
-            buyer_species TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    cursor.execute("""
         CREATE TABLE IF NOT EXISTS settlement_buildings (
             player_id TEXT,
             building_name TEXT,
@@ -228,16 +212,3 @@ def load_settlement(player_id):
     rows = cursor.fetchall()
     return {row["building_name"]: row["quantity"] for row in rows} if rows else {}
 
-async def save_trade_to_db(trade: dict):
-    """保存交易记录到数据库"""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT OR REPLACE INTO trade_listings (id, seller_id, seller_species, offer_item, offer_qty, want_item, want_qty, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        trade["id"], trade["seller_id"], trade["seller_species"],
-        trade["offer_item"], trade["offer_qty"], trade["want_item"],
-        trade["want_qty"], trade.get("status", "active")
-    ))
-    conn.commit()
