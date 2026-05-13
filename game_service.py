@@ -8,7 +8,7 @@ from typing import Optional
 import uuid
 from datetime import datetime
 
-from app.database import save_player as db_save_player, load_player as db_load_player, save_trade_to_db
+from app.database import save_player as db_save_player, load_player as db_load_player
 from app.core.config import (
     Terrain, Species, SpeciesCategory,
     SPECIES_TERRAIN, WEATHER_EFFECTS, SPECIES_TO_CATEGORY,
@@ -1551,124 +1551,6 @@ def use_item(player: Player, item_name: str) -> dict:
         "成功": True,
     }
 
-
-def _auto_match(trade_id: str) -> Optional[dict]:
-    """
-    静默自动匹配
-    检查是否有人挂了完全相反的交易单
-    """
-    my_trade = _trade_listings.get(trade_id)
-    if not my_trade:
-        return None
-
-    for other_id, other_trade in _trade_listings.items():
-        if other_id == trade_id:
-            continue
-        if other_trade["status"] != "active":
-            continue
-
-        # 完全匹配：我想出的 = 对方想要的，对方想出的 = 我想要的
-        if (my_trade["offer_item"] == other_trade["want_item"]
-                and my_trade["want_item"] == other_trade["offer_item"]
-                and my_trade["offer_qty"] == other_trade["want_qty"]
-                and my_trade["want_qty"] == other_trade["offer_qty"]):
-
-            # 执行交易
-            my_trade["status"] = "completed"
-            other_trade["status"] = "completed"
-
-            return {
-                "匹配到": other_id,
-                "你得到": f"{other_trade['offer_item']} x{other_trade['offer_qty']}",
-                "对方得到": f"{my_trade['offer_item']} x{my_trade['offer_qty']}",
-                "消息": "交易台发出一声轻响——双方的道具已交换完毕。全程没有一句话。",
-                "双方单号": [trade_id, other_id],
-            }
-
-    return None
-
-
-def browse_trades() -> dict:
-    """浏览当前所有活跃的交易单（不透露卖家身份）"""
-    active = []
-    for trade_id, trade in _trade_listings.items():
-        if trade["status"] == "active":
-            active.append({
-                "单号": trade_id,
-                "提供": f"{trade['offer_item']} x{trade['offer_qty']}",
-                "寻求": f"{trade['want_item']} x{trade['want_qty']}",
-            })
-
-    return {
-        "活跃交易单数": len(active),
-        "交易单列表": active,
-        "提示": "选中单号即可静默交换。对方不知道你是谁，你也不知道对方是谁。",
-    }
-
-
-def accept_trade(buyer: Player, trade_id: str) -> dict:
-    """
-    接受一笔交易单
-    买方用自己的道具交换卖方挂出的道具
-    """
-    trade = _trade_listings.get(trade_id)
-    if not trade:
-        return {"msg": "交易单不存在或已过期。", "成功": False}
-
-    if trade["status"] != "active":
-        return {"msg": "这笔交易已经完成了。", "成功": False}
-
-    if trade["seller_id"] == buyer.id:
-        return {"msg": "你不能接受自己挂的交易单。", "成功": False}
-
-    # 检查买方有没有对方想要的
-    want_item = trade["want_item"]
-    want_qty = trade["want_qty"]
-    if not hasattr(buyer, 'inventory') or buyer.inventory.get(want_item, 0) < want_qty:
-        return {"msg": f"你的背包中缺少 {want_item} x{want_qty}，无法接受这笔交易。", "成功": False}
-
-    # 扣买方的道具
-    buyer.inventory[want_item] -= want_qty
-    if buyer.inventory[want_item] <= 0:
-        del buyer.inventory[want_item]
-
-    # 买方获得卖方提供的道具
-    offer_item = trade["offer_item"]
-    offer_qty = trade["offer_qty"]
-    if not hasattr(buyer, 'inventory'):
-        buyer.inventory = {}
-    buyer.inventory[offer_item] = buyer.inventory.get(offer_item, 0) + offer_qty
-
-    # 卖方获得买方出的道具（扣掉后存到卖方背包）
-    seller_data = _player_storage.get(trade["seller_id"])
-    if seller_data:
-        seller_inventory = seller_data.get("inventory", {})
-        seller_inventory[want_item] = seller_inventory.get(want_item, 0) + want_qty
-        seller_data["inventory"] = seller_inventory
-        _player_storage[trade["seller_id"]] = seller_data
-
-    # 标记交易完成
-    trade["status"] = "completed"
-    trade["buyer_id"] = buyer.id
-    trade["buyer_species"] = buyer.species.value
-
-    narrative = (
-        f"交易台发出一声轻响。\n"
-        f"你放下 {want_item} x{want_qty}，拿走了 {offer_item} x{offer_qty}。\n"
-        f"交易完成的一瞬，你瞥见了对方——是一只{trade['seller_species']}。\n"
-        f"对方也看到了你，一只{buyer.species.value}。\n"
-        f"没有对话，只有短暂的目光交汇。\n"
-        f"随后各自离开。"
-    )
-
-    return {
-        "msg": "静默交易完成",
-        "叙事": narrative,
-        "你得到": f"{offer_item} x{offer_qty}",
-        "你付出": f"{want_item} x{want_qty}",
-        "对方物种": trade["seller_species"],
-        "成功": True,
-    }
 
 # ---------- 营地建造系统 ----------
 
