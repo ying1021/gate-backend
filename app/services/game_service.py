@@ -3,26 +3,35 @@
 环境消耗、等级经验、战斗判定等
 """
 import random
+import asyncio
 from typing import Optional
 import uuid
-_settlement_storage = {}
-
-from app.core.config import (
-    Terrain,
-    Species,
-    SpeciesCategory,
-    SPECIES_TERRAIN,
-    WEATHER_EFFECTS,
-    SPECIES_TO_CATEGORY,
-    SPECIES_INNATES,
-    SPECIALIZATION_PER_LEVELS,
-)
-_settlement_storage: dict[str, dict] = {}
+from datetime import datetime
 
 from app.database import save_player as db_save_player, load_player as db_load_player
+from app.core.config import (
+    Terrain, Species, SpeciesCategory,
+    SPECIES_TERRAIN, WEATHER_EFFECTS, SPECIES_TO_CATEGORY,
+    SPECIES_INNATES, SPECIALIZATION_PER_LEVELS,
+    TALENT_EFFECTS, ITEM_INFO, Item as ItemEnum,
+    CATEGORY_TRAITS, SPECIALIZATIONS,
+    MapRegion, MapType, MAP_TO_TYPE, MAP_TO_TERRAIN,
+    CITY_MAPS, SPAWN_MAPS, NON_SPAWN_MAPS,
+    SPAWN_DESCRIPTIONS, NON_SPAWN_DESCRIPTIONS,
+    Item, ItemRarity, MAP_LOOT_TABLE, FISHING_LOOT_TABLE, KILL_LOOT_TABLE,
+    RANDOM_EVENTS, EventType,
+    Building, BuildingType, BUILDING_RECIPES, BUILDING_EFFECTS,
+    MAP_CONNECTIONS, MAP_SHOPS,
+    STALL_ELIGIBLE_SPECIES, PLANT_GROWTH,
+)
+from app.models.player import Player
+# 内存存储
+# test
+_player_storage: dict[str, dict] = {}
+_settlement_storage: dict[str, dict] = {}
+
 save_player = db_save_player
 load_player = db_load_player
-from app.models.player import Player
 
 
 def get_terrain_adaptation(category: SpeciesCategory, terrain: Terrain) -> float:
@@ -56,7 +65,6 @@ def calculate_env_decay(
     # 天赋效果
     talent_bonus = 1.0
     if player.talent:
-        from app.core.config import TALENT_EFFECTS
         talent_info = TALENT_EFFECTS.get(player.talent.value, {})
         if talent_info.get("env_decay_reduction"):
             talent_bonus -= talent_info["env_decay_reduction"]
@@ -324,12 +332,10 @@ def calculate_damage(
     talent_damage_bonus = 1.0
     talent_defense_bonus = 1.0
     if attacker.talent:
-        from app.core.config import TALENT_EFFECTS
         atk_talent = TALENT_EFFECTS.get(attacker.talent.value, {})
         if atk_talent.get("damage_bonus"):
             talent_damage_bonus += atk_talent["damage_bonus"]
     if defender.talent:
-        from app.core.config import TALENT_EFFECTS
         def_talent = TALENT_EFFECTS.get(defender.talent.value, {})
         if def_talent.get("defense_bonus"):
             talent_defense_bonus += def_talent["defense_bonus"]
@@ -354,9 +360,8 @@ def calculate_damage(
     # 5.7 武器加成
     weapon_bonus = 0
     inventory = getattr(attacker, 'inventory', {}) or {}
-    from app.core.config import ITEM_INFO, Item as I
     for item_name, qty in inventory.items():
-        for i in I:
+        for i in ItemEnum:
             if i.value == item_name:
                 info = ITEM_INFO.get(i, {})
                 dmg = info.get("效果", {}).get("damage_bonus", 0)
@@ -489,31 +494,15 @@ async def execute_battle(
 
 # ---------- 离线/在线与死亡管理系统 ----------
 
-from datetime import datetime, timedelta
-from typing import Optional
-
 # 死亡冷却时间（秒），防止频繁死亡重开
 DEATH_COOLDOWN = 60
 
 
 def go_offline(player: Player) -> dict:
     """
-    主动离线（保命机制）
-    规则：残重伤、危机时主动离线，保留全部数据
+    主动离线，保留全部数据
     """
     save_result = db_save_player(player)
-
-    # 恢复全部四维到安全值（离线代表脱离危险）
-    player.vital.vitality = min(150, player.vital.vitality + 30)
-    player.vital.stamina = min(150, player.vital.stamina + 30)
-    player.vital.satiety = min(150, player.vital.satiety + 20)
-    player.vital.sanity = min(150, player.vital.sanity + 20)
-
-    # 轻度损伤自然恢复
-    for field in player.injury.model_fields:
-        current = getattr(player.injury, field)
-        setattr(player.injury, field, max(0, current - 10))
-
     player.is_online = False
 
     # 再次保存恢复后的数据
@@ -567,11 +556,15 @@ def check_death_cooldown(player_id: str) -> Optional[int]:
 def handle_death(player: Player, killer_id: str = None):
     """死亡处理"""
     from app.database import save_death_record, delete_player_from_db
-    import asyncio
 
     species_name = player.species.value
     level = player.level
     player_id = player.id
+
+    # 存储死亡冷却记录到内存
+    _player_storage[f"_death_{player_id}"] = {
+        "death_time": datetime.now().isoformat()
+    }
 
     # 异步保存死亡记录
     asyncio.create_task(save_death_record(player_id, species_name, level, killer_id))
@@ -601,7 +594,7 @@ SPECIES_WEIGHTS = {
     Species.BEAR: 1.5, Species.PIG: 1.5, Species.FOX: 1.5,
     Species.RACCOON: 1.5, Species.MOUSE: 1.5, Species.GORILLA: 1.5,
     Species.CROW: 1.5, Species.WILDCAT: 1.5, Species.HEDGEHOG: 1.5,
-    Species.BADGER: 1.5,
+    Species.BADGER: 1.5,Species.HUMAN: 1.5,
     # 无脊椎动物 12种
     Species.CENTIPEDE: 1.2, Species.SCORPION: 1.2, Species.SPIDER: 1.2,
     Species.MANTIS: 1.2, Species.BEETLE: 1.2, Species.ANT: 1.2,
@@ -675,7 +668,6 @@ def create_new_life() -> dict:
     # 应用大类特质
     category = SPECIES_TO_CATEGORY.get(new_species)
     if category:
-        from app.core.config import CATEGORY_TRAITS
         traits = CATEGORY_TRAITS.get(category.value, {})
         if traits.get("vital_bonus"):
             bonus = traits["vital_bonus"]
@@ -1172,13 +1164,6 @@ def simulate_tick_with_narrative(
 
 # ---------- 地图系统 ----------
 
-from app.core.config import (
-    MapRegion, MapType, MAP_TO_TYPE, MAP_TO_TERRAIN,
-    CITY_MAPS, SPAWN_MAPS, NON_SPAWN_MAPS,
-    SPAWN_DESCRIPTIONS, NON_SPAWN_DESCRIPTIONS,
-)
-
-
 def roll_spawn_region() -> dict:
     """
     出生点抽签
@@ -1274,15 +1259,6 @@ def commit_suicide(player: Player) -> dict:
     return death_result
 
 # ---------- 道具获取与随机事件系统 ----------
-
-import random as rand
-
-from app.core.config import (
-    Item, ItemRarity, ITEM_INFO,
-    MAP_LOOT_TABLE, FISHING_LOOT_TABLE, KILL_LOOT_TABLE,
-    RANDOM_EVENTS, EventType,
-)
-
 
 def roll_loot(loot_table: list) -> list:
     """
@@ -1576,195 +1552,8 @@ def use_item(player: Player, item_name: str) -> dict:
         "成功": True,
     }
 
-# ---------- 无声交易系统 ----------
-
-from typing import Optional
-
-# 交易挂单存储（模拟数据库）
-_trade_listings: dict[str, dict] = {}
-
-
-def list_trade(
-    seller: Player,
-    offer_item: str,
-    offer_qty: int,
-    want_item: str,
-    want_qty: int,
-) -> dict:
-    """
-    玩家挂出交易单
-    规则：安静挂单，不透露身份信息
-    """
-    # 检查背包
-    if not hasattr(seller, 'inventory') or seller.inventory.get(offer_item, 0) < offer_qty:
-        return {
-            "msg": f"背包中 {offer_item} 不足，无法挂单。",
-            "成功": False,
-        }
-
-    # 先扣掉要出的道具（防止二次交易）
-    seller.inventory[offer_item] -= offer_qty
-    if seller.inventory[offer_item] <= 0:
-        del seller.inventory[offer_item]
-
-    # 生成交易单
-    trade_id = f"trade_{len(_trade_listings) + 1:04d}"
-    _trade_listings[trade_id] = {
-        "id": trade_id,
-        "seller_id": seller.id,
-        "seller_species": seller.species.value,
-        "offer_item": offer_item,
-        "offer_qty": offer_qty,
-        "want_item": want_item,
-        "want_qty": want_qty,
-        "status": "active",
-    }
-    import asyncio
-    asyncio.create_task(save_trade_to_db(_trade_listings[trade_id]))
-
-    # 生成叙事——注意：符合静默规则，不暴露身份
-    narrative = (
-        f"你将 {offer_item} x{offer_qty} 放在交易台上。\n"
-        f"标明了想换的东西：{want_item} x{want_qty}。\n"
-        f"一切都在安静中进行，你不知道谁会来交换。"
-    )
-
-    # 如果有人挂了匹配的反向单，静默匹配
-    matched = _auto_match(trade_id)
-
-    return {
-        "msg": "挂单成功",
-        "交易单号": trade_id,
-        "叙事": narrative,
-        "自动匹配": matched,
-        "成功": True,
-    }
-
-
-def _auto_match(trade_id: str) -> Optional[dict]:
-    """
-    静默自动匹配
-    检查是否有人挂了完全相反的交易单
-    """
-    my_trade = _trade_listings.get(trade_id)
-    if not my_trade:
-        return None
-
-    for other_id, other_trade in _trade_listings.items():
-        if other_id == trade_id:
-            continue
-        if other_trade["status"] != "active":
-            continue
-
-        # 完全匹配：我想出的 = 对方想要的，对方想出的 = 我想要的
-        if (my_trade["offer_item"] == other_trade["want_item"]
-                and my_trade["want_item"] == other_trade["offer_item"]
-                and my_trade["offer_qty"] == other_trade["want_qty"]
-                and my_trade["want_qty"] == other_trade["offer_qty"]):
-
-            # 执行交易
-            my_trade["status"] = "completed"
-            other_trade["status"] = "completed"
-
-            return {
-                "匹配到": other_id,
-                "你得到": f"{other_trade['offer_item']} x{other_trade['offer_qty']}",
-                "对方得到": f"{my_trade['offer_item']} x{my_trade['offer_qty']}",
-                "消息": "交易台发出一声轻响——双方的道具已交换完毕。全程没有一句话。",
-                "双方单号": [trade_id, other_id],
-            }
-
-    return None
-
-
-def browse_trades() -> dict:
-    """浏览当前所有活跃的交易单（不透露卖家身份）"""
-    active = []
-    for trade_id, trade in _trade_listings.items():
-        if trade["status"] == "active":
-            active.append({
-                "单号": trade_id,
-                "提供": f"{trade['offer_item']} x{trade['offer_qty']}",
-                "寻求": f"{trade['want_item']} x{trade['want_qty']}",
-            })
-
-    return {
-        "活跃交易单数": len(active),
-        "交易单列表": active,
-        "提示": "选中单号即可静默交换。对方不知道你是谁，你也不知道对方是谁。",
-    }
-
-
-def accept_trade(buyer: Player, trade_id: str) -> dict:
-    """
-    接受一笔交易单
-    买方用自己的道具交换卖方挂出的道具
-    """
-    trade = _trade_listings.get(trade_id)
-    if not trade:
-        return {"msg": "交易单不存在或已过期。", "成功": False}
-
-    if trade["status"] != "active":
-        return {"msg": "这笔交易已经完成了。", "成功": False}
-
-    if trade["seller_id"] == buyer.id:
-        return {"msg": "你不能接受自己挂的交易单。", "成功": False}
-
-    # 检查买方有没有对方想要的
-    want_item = trade["want_item"]
-    want_qty = trade["want_qty"]
-    if not hasattr(buyer, 'inventory') or buyer.inventory.get(want_item, 0) < want_qty:
-        return {"msg": f"你的背包中缺少 {want_item} x{want_qty}，无法接受这笔交易。", "成功": False}
-
-    # 扣买方的道具
-    buyer.inventory[want_item] -= want_qty
-    if buyer.inventory[want_item] <= 0:
-        del buyer.inventory[want_item]
-
-    # 买方获得卖方提供的道具
-    offer_item = trade["offer_item"]
-    offer_qty = trade["offer_qty"]
-    if not hasattr(buyer, 'inventory'):
-        buyer.inventory = {}
-    buyer.inventory[offer_item] = buyer.inventory.get(offer_item, 0) + offer_qty
-
-    # 卖方获得买方出的道具（扣掉后存到卖方背包）
-    seller_data = _player_storage.get(trade["seller_id"])
-    if seller_data:
-        seller_inventory = seller_data.get("inventory", {})
-        seller_inventory[want_item] = seller_inventory.get(want_item, 0) + want_qty
-        seller_data["inventory"] = seller_inventory
-        _player_storage[trade["seller_id"]] = seller_data
-
-    # 标记交易完成
-    trade["status"] = "completed"
-    trade["buyer_id"] = buyer.id
-    trade["buyer_species"] = buyer.species.value
-
-    narrative = (
-        f"交易台发出一声轻响。\n"
-        f"你放下 {want_item} x{want_qty}，拿走了 {offer_item} x{offer_qty}。\n"
-        f"交易完成的一瞬，你瞥见了对方——是一只{trade['seller_species']}。\n"
-        f"对方也看到了你，一只{buyer.species.value}。\n"
-        f"没有对话，只有短暂的目光交汇。\n"
-        f"随后各自离开。"
-    )
-
-    return {
-        "msg": "静默交易完成",
-        "叙事": narrative,
-        "你得到": f"{offer_item} x{offer_qty}",
-        "你付出": f"{want_item} x{want_qty}",
-        "对方物种": trade["seller_species"],
-        "成功": True,
-    }
 
 # ---------- 营地建造系统 ----------
-
-from app.core.config import (
-    Building, BuildingType, BUILDING_RECIPES, BUILDING_EFFECTS,
-)
-
 
 def can_build(player: Player, building: Building) -> dict:
     """检查玩家是否有足够材料建造"""
@@ -1956,7 +1745,6 @@ def calculate_sanity_modifier(player: Player, terrain_str: str, weather_str: str
 
 
 # ---------- 专精加点系统 ----------
-from app.core.config import SPECIALIZATIONS, SPECIALIZATION_PER_LEVELS
 
 
 def allocate_spec_point(player: Player, spec_name: str) -> dict:
@@ -2009,8 +1797,6 @@ def get_specialization_effects(player: Player) -> dict:
 
 
 # ---------- 都市区完整规则 ----------
-from app.core.config import CITY_MAPS, MapRegion
-
 
 def check_city_rules(player: Player, action: str, map_region: str) -> dict:
     """
@@ -2226,8 +2012,6 @@ def exit_instance(player: Player) -> dict:
 
 
 # ---------- 种田植物生态 ----------
-from app.core.config import PLANT_GROWTH
-
 
 def get_plant_growth_stage(player: Player) -> dict:
     """获取植物当前生长阶段信息"""
@@ -2375,7 +2159,6 @@ def harvest_plant(player: Player) -> dict:
 
 
 # ---------- 商店系统 ----------
-from app.core.config import MAP_SHOPS
 
 
 def get_shops_for_map(map_region: str) -> dict:
@@ -2557,7 +2340,6 @@ def sense_red_name(player: Player, all_players: list) -> dict:
             continue
         if hasattr(other, 'red_name') and other.red_name:
             # 大致方向提示（简化：随机一个方向）
-            import random
             directions = ["北方", "南方", "东方", "西方", "东北方", "西北方", "东南方", "西南方"]
             direction = random.choice(directions)
             red_nearby.append({
@@ -2576,7 +2358,6 @@ def sense_red_name(player: Player, all_players: list) -> dict:
 
 
 # ---------- 地图移动系统 ----------
-from app.core.config import MAP_CONNECTIONS, MAP_SHOPS
 
 
 def get_available_moves(player_id: str, map_region: str) -> dict:
@@ -2630,7 +2411,6 @@ _shop_stalls: dict[str, list] = {}
 
 def open_stall(player: Player, items: list) -> dict:
     """开启营业：挂出道具兑换"""
-    from app.core.config import STALL_ELIGIBLE_SPECIES
 
     species_name = player.species.value if hasattr(player.species, 'value') else str(player.species)
     if species_name not in STALL_ELIGIBLE_SPECIES:
@@ -2654,17 +2434,18 @@ def open_stall(player: Player, items: list) -> dict:
     player.inventory = inventory
 
     # 添加到营业列表
-    if map_name not in _shop_stalls:
-        _shop_stalls[map_name] = []
+    current_map = player.current_map or "城郊青草地"
+    if current_map not in _shop_stalls:
+        _shop_stalls[current_map] = []
 
-    _shop_stalls[map_name].append({
+    _shop_stalls[current_map].append({
         "玩家ID": player.id,
         "物种": player.species.value if hasattr(player.species, 'value') else str(player.species),
         "商品": stall_items,
     })
 
     return {
-        "msg": f"你在{map_name}开启了营业，挂出了 {len(stall_items)} 种商品。",
+        "msg": f"你在{current_map}开启了营业，挂出了 {len(stall_items)} 种商品。",
         "挂出商品": stall_items,
         "成功": True,
     }
@@ -2726,7 +2507,6 @@ def explore_map_node(player: Player, map_name: str) -> dict:
         player.explored_maps.append(map_name)
 
     # 获取周围相连地图
-    from app.core.config import MAP_CONNECTIONS
     connections = MAP_CONNECTIONS.get(map_name, [])
 
     # 周围地图标记为"可见"（可以前往）
@@ -2747,7 +2527,6 @@ def get_visible_maps(player: Player, current_map: str) -> dict:
     if not hasattr(player, 'explored_maps'):
         player.explored_maps = []
 
-    from app.core.config import MAP_CONNECTIONS
     connections = MAP_CONNECTIONS.get(current_map, [])
 
     # 可见地图 = 已探索 + 当前地图的相邻地图
@@ -2822,5 +2601,4 @@ def get_quest_reward(player: Player, quest_name: str) -> dict:
             add_to_inventory(player, item, qty)
 
     return {"成功": True, "msg": q["完成提示"], "奖励": rewards}
-
 
