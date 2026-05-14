@@ -645,6 +645,7 @@ ITEM_INFO = {
     Item.HUNTING_BOW: {"稀有度": ItemRarity.RARE, "分类": ItemCategory.TRAP, "描述": "一把猎弓，+15伤害。", "效果": {"damage_bonus": 15}},
     Item.STONE_AXE: {"稀有度": ItemRarity.UNCOMMON, "分类": ItemCategory.MATERIAL, "描述": "沉重的石斧，+12伤害。", "效果": {"damage_bonus": 12}},
     Item.FISHING_ROD: {"稀有度": ItemRarity.COMMON, "分类": ItemCategory.TRAP, "描述": "一根简陋但能用的钓竿，可以在水域钓鱼。", "效果": {}},
+    Item.SOCKS: {"稀有度": ItemRarity.JOKE, "分类": ItemCategory.JOKE_ITEM, "描述": "一只孤单的袜子，它的另一半不知在何方。", "效果": {}},
 }
 
 # 地图→可探索获得的道具池
