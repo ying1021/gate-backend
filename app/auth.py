@@ -14,7 +14,7 @@ JWT_EXPIRE_DAYS = 7
 if not os.environ.get("JWT_SECRET"):
     print("[警告] 未设置 JWT_SECRET，使用临时密钥，服务重启后所有登录会失效")
 
-USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,20}$")
+USERNAME_RE = re.compile(r"[A-Za-z0-9_]{3,20}")
 
 # 无需登录即可访问
 PUBLIC_PATHS = frozenset({
@@ -43,11 +43,14 @@ NO_PLAYER_ID_PATHS = frozenset({
 
 def validate_credentials(username: str, password: str):
     """返回错误信息；合法时返回 None。"""
-    if not USERNAME_RE.match(username or ""):
+    if not USERNAME_RE.fullmatch(username or ""):
         return "用户名需为 3-20 位字母、数字或下划线"
     if not password:
         return "密码不能为空"
-    length = len(password.encode("utf-8"))
+    try:
+        length = len(password.encode("utf-8"))
+    except UnicodeEncodeError:
+        return "密码包含非法字符"
     if length < 6 or length > 72:
         return "密码长度需为 6-72 字节"
     return None
@@ -60,13 +63,13 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, password_hash: str) -> bool:
     try:
         return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, AttributeError):
         return False
 
 
 def create_token(user_id: str) -> str:
     now = datetime.now(timezone.utc)
-    payload = {"sub": user_id, "iat": now, "exp": now + timedelta(days=JWT_EXPIRE_DAYS)}
+    payload = {"sub": str(user_id), "iat": now, "exp": now + timedelta(days=JWT_EXPIRE_DAYS)}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
@@ -83,12 +86,13 @@ def authenticate_request(path, method, authorization, player_id, owner_lookup):
     if method == "OPTIONS" or path in PUBLIC_PATHS:
         return None, None
 
-    if not authorization or not authorization.startswith("Bearer "):
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not token:
         return None, (401, "未登录")
 
     try:
-        payload = decode_token(authorization[7:].strip())
-    except Exception:
+        payload = decode_token(token)
+    except jwt.InvalidTokenError:
         return None, (401, "登录已过期，请重新登录")
 
     user_id = payload.get("sub")

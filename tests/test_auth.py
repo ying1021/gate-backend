@@ -1,5 +1,7 @@
 import unittest
 
+import jwt
+
 from app.auth import (
     authenticate_request,
     create_token,
@@ -42,6 +44,19 @@ class ValidationTests(unittest.TestCase):
     def test_password_empty(self):
         self.assertEqual(validate_credentials("player1", ""), "密码不能为空")
 
+    def test_username_boundaries(self):
+        self.assertIsNone(validate_credentials("abc", "secret123"))
+        self.assertIsNone(validate_credentials("a" * 20, "secret123"))
+        self.assertIsNotNone(validate_credentials("a" * 21, "secret123"))
+
+    def test_password_byte_boundaries(self):
+        self.assertIsNone(validate_credentials("player1", "a" * 6))
+        self.assertIsNone(validate_credentials("player1", "a" * 72))
+        self.assertIsNotNone(validate_credentials("player1", "a" * 73))
+
+    def test_username_trailing_newline_rejected(self):
+        self.assertIsNotNone(validate_credentials("abc\n", "secret123"))
+
 
 class TokenTests(unittest.TestCase):
     def test_roundtrip(self):
@@ -49,7 +64,7 @@ class TokenTests(unittest.TestCase):
         self.assertEqual(decode_token(token)["sub"], "user-123")
 
     def test_garbage_token_rejected(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(jwt.InvalidTokenError):
             decode_token("not-a-token")
 
 
@@ -96,11 +111,31 @@ class AuthRuleTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(user, "user-1")
 
-    def test_token_without_sub(self):
-        from unittest.mock import patch
-        with patch("app.auth.decode_token", return_value={}):
-            _, error = authenticate_request(PROTECTED, "GET", "Bearer whatever", "p-own", self.owner)
+    def test_token_without_sub_uses_real_jwt(self):
+        import jwt as pyjwt
+        from app.auth import JWT_SECRET, JWT_ALGORITHM
+        token = pyjwt.encode({"foo": "bar"}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        _, error = authenticate_request(PROTECTED, "GET", "Bearer " + token, "p-own", self.owner)
         self.assertEqual(error, (401, "登录已过期，请重新登录"))
+
+    def test_expired_token_rejected(self):
+        from datetime import datetime, timedelta, timezone
+        import jwt as pyjwt
+        from app.auth import JWT_SECRET, JWT_ALGORITHM
+        now = datetime.now(timezone.utc)
+        token = pyjwt.encode(
+            {"sub": "user-1", "iat": now - timedelta(days=8), "exp": now - timedelta(days=1)},
+            JWT_SECRET,
+            algorithm=JWT_ALGORITHM,
+        )
+        _, error = authenticate_request(PROTECTED, "GET", "Bearer " + token, "p-own", self.owner)
+        self.assertEqual(error, (401, "登录已过期，请重新登录"))
+
+    def test_lowercase_bearer_accepted(self):
+        token = create_token("user-1")
+        user, error = authenticate_request(PROTECTED, "GET", "bearer " + token, "p-own", self.owner)
+        self.assertIsNone(error)
+        self.assertEqual(user, "user-1")
 
 
 if __name__ == "__main__":
