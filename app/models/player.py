@@ -50,6 +50,7 @@ class InjuryState(BaseModel):
 # ---------- 玩家完整状态模型 ----------
 class Player(BaseModel):
     id: str
+    user_id: Optional[str] = None
     species: Species
     level: int = 1
     talent: Optional[Talent] = None

@@ -25,6 +25,15 @@ def init_db():
     cursor = conn.cursor()
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS players (
             id TEXT PRIMARY KEY,
             species TEXT NOT NULL,
@@ -44,6 +53,15 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+    """)
+
+    cursor.execute("""
+        ALTER TABLE players
+        ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_players_user_id ON players(user_id)
     """)
 
     cursor.execute("""
@@ -93,10 +111,11 @@ def save_player(player):
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO players (id, species, level, talent, exp, spec_points, current_map, 
+        INSERT INTO players (id, user_id, species, level, talent, exp, spec_points, current_map,
         is_online, inventory, settlement, plant_growth, quests, specializations, debuffs, instance_ticks, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         ON CONFLICT (id) DO UPDATE SET
+            user_id = COALESCE(EXCLUDED.user_id, players.user_id),
             species = EXCLUDED.species,
             level = EXCLUDED.level,
             talent = EXCLUDED.talent,
@@ -114,6 +133,7 @@ def save_player(player):
             updated_at = CURRENT_TIMESTAMP
     """, (
         player.id,
+        getattr(player, 'user_id', None),
         str(player.species.value) if hasattr(player.species, 'value') else str(player.species),
         player.level,
         player.talent.value if player.talent and hasattr(player.talent, 'value') else str(player.talent) if player.talent else None,
@@ -197,6 +217,7 @@ def load_player(player_id):
 
     player = Player(
         id=row["id"],
+        user_id=row["user_id"],
         species=species,
         level=row["level"],
         exp=row["exp"] or 0,
@@ -295,3 +316,79 @@ async def delete_player_from_db(player_id: str):
     cursor.execute("DELETE FROM players WHERE id = %s", (player_id,))
     conn.commit()
     conn.close()
+
+
+def create_user(user_id, username, password_hash):
+    """创建账号；用户名重复时返回 False"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO users (id, username, password_hash) VALUES (%s, %s, %s)",
+            (user_id, username, password_hash),
+        )
+        conn.commit()
+        return True
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+def get_user_by_username(username):
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute(
+        "SELECT id, username, password_hash FROM users WHERE username = %s",
+        (username,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_user_by_id(user_id):
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT id, username FROM users WHERE id = %s", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_player_owner(player_id):
+    """返回角色所属用户 ID；角色不存在时返回 None"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM players WHERE id = %s", (player_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def list_players_by_user(user_id):
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute(
+        """
+        SELECT id, species, level, current_map, created_at, updated_at
+        FROM players
+        WHERE user_id = %s
+        ORDER BY updated_at DESC
+        """,
+        (user_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "id": row["id"],
+            "species": row["species"],
+            "level": row["level"],
+            "current_map": row["current_map"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+        }
+        for row in rows
+    ]
