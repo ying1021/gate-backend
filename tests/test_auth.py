@@ -39,6 +39,9 @@ class ValidationTests(unittest.TestCase):
     def test_password_too_long(self):
         self.assertIsNotNone(validate_credentials("player1", "a" * 73))
 
+    def test_password_empty(self):
+        self.assertEqual(validate_credentials("player1", ""), "密码不能为空")
+
 
 class TokenTests(unittest.TestCase):
     def test_roundtrip(self):
@@ -69,7 +72,7 @@ class AuthRuleTests(unittest.TestCase):
 
     def test_invalid_token(self):
         _, error = authenticate_request(PROTECTED, "GET", "Bearer bad", "p-own", self.owner)
-        self.assertEqual(error[0], 401)
+        self.assertEqual(error, (401, "登录已过期，请重新登录"))
 
     def test_missing_player_id(self):
         token = create_token("user-1")
@@ -92,6 +95,12 @@ class AuthRuleTests(unittest.TestCase):
         user, error = authenticate_request("/player/list", "GET", "Bearer " + token, None, self.owner)
         self.assertIsNone(error)
         self.assertEqual(user, "user-1")
+
+    def test_token_without_sub(self):
+        from unittest.mock import patch
+        with patch("app.auth.decode_token", return_value={}):
+            _, error = authenticate_request(PROTECTED, "GET", "Bearer whatever", "p-own", self.owner)
+        self.assertEqual(error, (401, "登录已过期，请重新登录"))
 
 
 if __name__ == "__main__":
