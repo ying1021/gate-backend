@@ -110,6 +110,7 @@ def save_player(player):
     conn = get_connection()
     cursor = conn.cursor()
 
+    # user_id 采用 COALESCE：传 None 不会清除已有归属，只有显式传入新值才会覆盖
     cursor.execute("""
         INSERT INTO players (id, user_id, species, level, talent, exp, spec_points, current_map,
         is_online, inventory, settlement, plant_growth, quests, specializations, debuffs, instance_ticks, updated_at)
@@ -319,7 +320,7 @@ async def delete_player_from_db(player_id: str):
 
 
 def create_user(user_id, username, password_hash):
-    """创建账号；用户名重复时返回 False"""
+    """创建账号；用户名或 ID 已存在时返回 False"""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -338,49 +339,57 @@ def create_user(user_id, username, password_hash):
 
 def get_user_by_username(username):
     conn = get_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cursor.execute(
-        "SELECT id, username, password_hash FROM users WHERE username = %s",
-        (username,),
-    )
-    row = cursor.fetchone()
-    conn.close()
+    try:
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(
+            "SELECT id, username, password_hash FROM users WHERE username = %s",
+            (username,),
+        )
+        row = cursor.fetchone()
+    finally:
+        conn.close()
     return dict(row) if row else None
 
 
 def get_user_by_id(user_id):
     conn = get_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cursor.execute("SELECT id, username FROM users WHERE id = %s", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
+    try:
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("SELECT id, username FROM users WHERE id = %s", (user_id,))
+        row = cursor.fetchone()
+    finally:
+        conn.close()
     return dict(row) if row else None
 
 
 def get_player_owner(player_id):
     """返回角色所属用户 ID；角色不存在时返回 None"""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM players WHERE id = %s", (player_id,))
-    row = cursor.fetchone()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM players WHERE id = %s", (player_id,))
+        row = cursor.fetchone()
+    finally:
+        conn.close()
     return row[0] if row else None
 
 
 def list_players_by_user(user_id):
     conn = get_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cursor.execute(
-        """
-        SELECT id, species, level, current_map, created_at, updated_at
-        FROM players
-        WHERE user_id = %s
-        ORDER BY updated_at DESC
-        """,
-        (user_id,),
-    )
-    rows = cursor.fetchall()
-    conn.close()
+    try:
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(
+            """
+            SELECT id, species, level, current_map, created_at, updated_at
+            FROM players
+            WHERE user_id = %s
+            ORDER BY updated_at DESC, id
+            """,
+            (user_id,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
     return [
         {
             "id": row["id"],
