@@ -6,7 +6,8 @@
 
 - 前端仓库：[ying1021/gate-of-life](https://github.com/ying1021/gate-of-life)
 - 线上前端：[https://ying1021.github.io/gate-of-life/](https://ying1021.github.io/gate-of-life/)
-- 接口文档：本地启动后访问 `http://127.0.0.1:8000/docs`（FastAPI 自动生成 Swagger）
+- 线上后端：[https://gate-backend-hq8w.onrender.com](https://gate-backend-hq8w.onrender.com)
+- 接口文档：[https://gate-backend-hq8w.onrender.com/docs](https://gate-backend-hq8w.onrender.com/docs)（本地：`http://127.0.0.1:8000/docs`）
 
 ## 技术栈
 
