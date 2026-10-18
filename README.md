@@ -16,7 +16,7 @@
 | Web 框架 | FastAPI + Uvicorn |
 | 数据校验 | Pydantic |
 | 数据库 | PostgreSQL（psycopg2） |
-| 部署 | Render（后端 + PostgreSQL）+ GitHub Pages（前端） |
+| 部署 | Render（后端）+ PostgreSQL + GitHub Pages（前端） |
 | 版本控制 | Git / GitHub |
 
 ## 功能模块
@@ -86,7 +86,7 @@ uvicorn app.main:app --reload
 
 - **后端**：Render，启动命令见 `Procfile`：
   `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- **数据库**：Render PostgreSQL，连接串通过 `DATABASE_URL` 环境变量注入；
+- **数据库**：PostgreSQL，连接串通过 `DATABASE_URL` 环境变量注入；
 - **前端**：GitHub Pages，代码位于 [gate-of-life](https://github.com/ying1021/gate-of-life)；
 - 前端通过 `fetch` 调用后端接口，接口基址配置在 [gate-of-life](https://github.com/ying1021/gate-of-life) 仓库的 `js/api.js` 中。
 
