@@ -87,6 +87,7 @@ def authenticate_request(path, method, authorization, player_id, owner_lookup):
         return None, None
 
     scheme, _, token = (authorization or "").partition(" ")
+    token = token.strip()
     if scheme.lower() != "bearer" or not token:
         return None, (401, "未登录")
 

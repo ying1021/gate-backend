@@ -63,6 +63,12 @@ class TokenTests(unittest.TestCase):
         token = create_token("user-123")
         self.assertEqual(decode_token(token)["sub"], "user-123")
 
+    def test_token_lifetime_is_seven_days(self):
+        from datetime import timedelta
+        payload = decode_token(create_token("user-1"))
+        lifetime = timedelta(seconds=payload["exp"] - payload["iat"])
+        self.assertEqual(lifetime, timedelta(days=7))
+
     def test_garbage_token_rejected(self):
         with self.assertRaises(jwt.InvalidTokenError):
             decode_token("not-a-token")
