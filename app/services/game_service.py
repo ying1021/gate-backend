@@ -651,7 +651,7 @@ def weighted_random_species() -> Species:
     weights = list(SPECIES_WEIGHTS.values())
     return random.choices(species_list, weights=weights, k=1)[0]
 
-def create_new_life() -> dict:
+def create_new_life(user_id: str | None = None) -> dict:
     """
     新玩家/死亡重开
     规则：
@@ -666,6 +666,7 @@ def create_new_life() -> dict:
         id=str(uuid.uuid4())[:8],
         species=new_species,
         level=1,
+        user_id=user_id,
     )
     # 初始道具
     player.inventory = {"野果": 2, "草药绷带":1,"生锈的铁刀": 1}

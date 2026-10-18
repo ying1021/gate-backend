@@ -1,13 +1,48 @@
 import random
 import uuid
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
+from app.auth import (
+    authenticate_request,
+    create_token,
+    hash_password,
+    validate_credentials,
+    verify_password,
+)
 from app.core.config import Species, Terrain
+from app.database import (
+    create_user,
+    get_player_owner,
+    get_user_by_id,
+    get_user_by_username,
+    init_db,
+    list_players_by_user,
+)
 from app.models.player import Player, Talent
 from app.services.game_service import simulate_tick_with_narrative
 
 app = FastAPI(title="众生之门")
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    user_id, error = authenticate_request(
+        path=request.url.path,
+        method=request.method,
+        authorization=request.headers.get("Authorization"),
+        player_id=request.query_params.get("player_id"),
+        owner_lookup=get_player_owner,
+    )
+    if error:
+        status_code, detail = error
+        return JSONResponse({"detail": detail}, status_code=status_code)
+    request.state.user_id = user_id
+    return await call_next(request)
+
+
 from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
@@ -16,7 +51,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-from app.database import init_db
 
 
 @app.on_event("startup")
@@ -29,8 +63,55 @@ async def root():
     return {"message": "众生之门已开启"}
 
 
+class AuthRequest(BaseModel):
+    username: str
+    password: str
+
+
+def _auth_response(user_id: str, username: str) -> dict:
+    return {
+        "access_token": create_token(user_id),
+        "token_type": "bearer",
+        "user": {"id": user_id, "username": username},
+    }
+
+
+@app.post("/auth/register")
+async def register(req: AuthRequest):
+    username = req.username.strip()
+    error = validate_credentials(username, req.password)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+
+    user_id = uuid.uuid4().hex
+    if not create_user(user_id, username, hash_password(req.password)):
+        raise HTTPException(status_code=409, detail="用户名已存在")
+    return _auth_response(user_id, username)
+
+
+@app.post("/auth/login")
+async def login(req: AuthRequest):
+    user = get_user_by_username(req.username.strip())
+    if not user or not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    return _auth_response(user["id"], user["username"])
+
+
+@app.get("/auth/me")
+async def me(request: Request):
+    user = get_user_by_id(request.state.user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
+    return {"id": user["id"], "username": user["username"]}
+
+
+@app.get("/player/list")
+async def player_list(request: Request):
+    return {"players": list_players_by_user(request.state.user_id)}
+
+
 @app.post("/player/create")
-async def create_player():
+async def create_player(request: Request):
     """创建一个新玩家，随机物种和天赋"""
     from app.database import save_player as db_save
 
@@ -42,6 +123,7 @@ async def create_player():
         species=chosen_species,
         talent=chosen_talent,
     )
+    player.user_id = request.state.user_id
 
     if not player.inventory:
         player.inventory = {"野果": 2, "草药绷带": 1, "生锈的铁刀": 1}
@@ -170,10 +252,21 @@ async def suicide(player_id: str = "test", level: int = 3):
 
 
 @app.post("/player/new_life")
-async def new_life():
+async def new_life(request: Request):
     """创建新生命"""
-    result = create_new_life()
+    result = create_new_life(user_id=request.state.user_id)
     return result
+
+
+@app.get("/player/state")
+async def player_state(player_id: str):
+    """读取角色完整状态（归属由中间件校验）"""
+    from app.database import load_player as db_load
+
+    player = db_load(player_id)
+    if not player:
+        raise HTTPException(status_code=404, detail="角色不存在")
+    return {"玩家状态": player.model_dump(by_alias=True)}
 
 
 @app.get("/player/death_cooldown")
