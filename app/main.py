@@ -119,7 +119,7 @@ async def create_player(request: Request):
     chosen_talent = random.choice(list(Talent))
 
     player = Player(
-        id=str(uuid.uuid4())[:8],
+        id=uuid.uuid4().hex,
         species=chosen_species,
         talent=chosen_talent,
     )

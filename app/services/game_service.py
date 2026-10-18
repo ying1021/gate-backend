@@ -663,7 +663,7 @@ def create_new_life(user_id: str | None = None) -> dict:
     new_species = weighted_random_species()
 
     player = Player(
-        id=str(uuid.uuid4())[:8],
+        id=uuid.uuid4().hex,
         species=new_species,
         level=1,
         user_id=user_id,
