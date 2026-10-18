@@ -110,27 +110,28 @@ def main():
         token=token_a,
         timeout=args.timeout,
     )
-    check("探索", status == 200 and data.get("探索地图") == "城郊青草地", f"status={status} data={data}")
+    check("探索", status == 200 and isinstance(data, dict) and data.get("探索地图") == "城郊青草地", f"status={status} data={data}")
 
     status, data = call(base, "GET", "/inventory/view?" + urlencode({"player_id": player_a}), token=token_a, timeout=args.timeout)
     check(
         "查看背包",
-        status == 200 and "背包" in data and data.get("物品种类数", 0) >= 1,
+        status == 200 and isinstance(data, dict) and data.get("success") is True
+        and bool(data.get("背包")) and (data.get("玩家状态") or {}).get("id") == player_a,
         f"status={status} data={data}",
     )
 
     status, data = call(base, "GET", "/map/moves?" + urlencode({"player_id": player_a, "map_region": "城郊青草地"}), token=token_a, timeout=args.timeout)
     check(
         "查看可前往地图",
-        status == 200 and data.get("当前地图") == "城郊青草地" and bool(data.get("可前往")),
+        status == 200 and isinstance(data, dict) and data.get("当前地图") == "城郊青草地" and bool(data.get("可前往")),
         f"status={status} data={data}",
     )
 
     status, data = call(base, "GET", "/shop/info?" + urlencode({"map_region": "都市商业街"}), token=token_a, timeout=args.timeout)
-    check("查看商店", status == 200 and data.get("有商店") is True, f"status={status} data={data}")
+    check("查看商店", status == 200 and isinstance(data, dict) and data.get("有商店") is True, f"status={status} data={data}")
 
     status, data = call(base, "GET", "/settlement/view?" + urlencode({"player_id": player_a}), token=token_a, timeout=args.timeout)
-    check("查看营地", status == 200 and "营地" in data, f"status={status} data={data}")
+    check("查看营地", status == 200 and isinstance(data, dict) and "营地" in data, f"status={status} data={data}")
 
     user_b = rand_name()
     status, data = call(base, "POST", "/auth/register", body={"username": user_b, "password": password}, timeout=args.timeout)
@@ -143,7 +144,11 @@ def main():
     status, data = call(base, "GET", "/player/list", token=token_b, timeout=args.timeout)
     players = data.get("players") if isinstance(data, dict) else None
     ids_b = [p.get("id") for p in players if isinstance(p, dict)] if isinstance(players, list) else []
-    check("B 的角色列表不含 A 的角色", status == 200 and player_a not in ids_b, f"status={status} ids={ids_b}")
+    check(
+        "B 的角色列表不含 A 的角色",
+        status == 200 and bool(player_a) and isinstance(players, list) and player_a not in ids_b,
+        f"status={status} ids={ids_b}",
+    )
 
     status, data = call(base, "GET", "/inventory/view?" + urlencode({"player_id": player_a}), token=token_b, timeout=args.timeout)
     check("B 访问 A 的背包被拒绝", status == 403, f"status={status}")
@@ -151,8 +156,13 @@ def main():
     status, data = call(base, "GET", "/player/list", timeout=args.timeout)
     check("无 token 被拒绝", status == 401, f"status={status}")
 
-    status, data = call(base, "GET", "/player/list", token="not.a.jwt", timeout=args.timeout)
-    check("伪造 token 被拒绝", status == 401, f"status={status}")
+    forged = (
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+        "eyJzdWIiOiJ1MSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjo0MTAyNDQ0ODAwfQ."
+        "invalidsignature"
+    )
+    status, data = call(base, "GET", "/player/list", token=forged, timeout=args.timeout)
+    check("伪造签名 token 被拒绝", status == 401, f"status={status}")
 
     status, data = call(base, "POST", "/auth/login", body={"username": user_a, "password": "wrongpass"}, timeout=args.timeout)
     check("错误密码被拒绝", status == 401, f"status={status}")
@@ -161,7 +171,7 @@ def main():
     check("正确密码登录", status == 200 and isinstance(data, dict) and "access_token" in data, f"status={status}")
     login_token = data.get("access_token", "") if isinstance(data, dict) else ""
     status, data = call(base, "GET", "/auth/me", token=login_token, timeout=args.timeout)
-    check("登录令牌可用", status == 200 and data.get("username") == user_a, f"status={status}")
+    check("登录令牌可用", status == 200 and isinstance(data, dict) and data.get("username") == user_a, f"status={status}")
 
     status, data = call(base, "POST", "/auth/register", body={"username": user_a, "password": password}, timeout=args.timeout)
     check("重复用户名返回 409", status == 409, f"status={status}")
