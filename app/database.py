@@ -275,19 +275,25 @@ def load_player(player_id):
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    cursor.execute("SELECT * FROM players WHERE id = %s", (player_id,))
+    # 一次 JOIN 取回玩家、生命值与伤势，减少与数据库的往返次数
+    cursor.execute("""
+        SELECT p.*,
+               v.vitality, v.stamina, v.satiety, v.sanity,
+               i.skin_laceration, i.fracture, i.blood_loss, i.poison,
+               i.asphyxia, i.frostbite, i.burn, i.sensory_damage
+        FROM players p
+        LEFT JOIN player_vitals v ON v.player_id = p.id
+        LEFT JOIN player_injuries i ON i.player_id = p.id
+        WHERE p.id = %s
+    """, (player_id,))
     row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return None
-
-    cursor.execute("SELECT * FROM player_vitals WHERE player_id = %s", (player_id,))
-    vital_row = cursor.fetchone()
-
-    cursor.execute("SELECT * FROM player_injuries WHERE player_id = %s", (player_id,))
-    injury_row = cursor.fetchone()
 
     conn.close()
+
+    if not row:
+        return None
+    vital_row = row if row["vitality"] is not None else None
+    injury_row = row if row["skin_laceration"] is not None else None
 
     from app.models.player import Player, VitalStats, InjuryState
     from app.core.config import Species

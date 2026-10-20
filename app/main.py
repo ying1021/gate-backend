@@ -301,6 +301,24 @@ async def explore(player_id: str = "test", map_region: str = "城郊青草地"):
     return result
 
 
+@app.post("/game/explore_full")
+async def explore_full(
+    player_id: str = "test",
+    map_region: str = "城郊青草地",
+    terrain_str: str = "森林",
+    weather_str: str = "晴天",
+):
+    """探索 + 随机事件一次完成，减少一次网络往返"""
+    from app.database import load_player as db_load, save_player as db_save
+    player = db_load(player_id)
+    if not player:
+        player = Player(id=player_id, species=Species.TIGER)
+    result = explore_map(player, map_region)
+    event = trigger_random_event(player, terrain_str, weather_str, map_region)
+    db_save(player)
+    return {"探索": result, "随机事件": event}
+
+
 @app.post("/game/fishing")
 async def fishing(player_id: str = "test", map_region: str = "湖滨芦苇荡"):
     """钓鱼"""
