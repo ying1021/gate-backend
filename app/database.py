@@ -3,8 +3,10 @@
 """
 import os
 import json
+import time
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 from urllib.parse import urlparse
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -12,11 +14,94 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL 环境变量未设置")
 
+# 连接池：免去每次请求重新连接 Neon 的握手开销（单次约 1-3 秒）
+_pool = None
+_last_used = {}
+_IDLE_CHECK_SECONDS = 60
+
+
+def _get_pool():
+    global _pool
+    if _pool is None:
+        _pool = psycopg2.pool.ThreadedConnectionPool(1, 10, dsn=DATABASE_URL)
+    return _pool
+
+
+class _PooledConnection:
+    """把连接池连接包装成普通连接，兼容现有的 conn.close() 调用。
+
+    close() 会把连接归还池中，而不是真正断开。
+    """
+
+    def __init__(self, pool, conn):
+        object.__setattr__(self, "_pool", pool)
+        object.__setattr__(self, "_conn", conn)
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_conn"), name)
+
+    def close(self):
+        conn = object.__getattribute__(self, "_conn")
+        if conn is None:
+            return
+        object.__setattr__(self, "_conn", None)
+        pool = object.__getattribute__(self, "_pool")
+
+        if pool is None:
+            conn.close()
+            return
+
+        _last_used[id(conn)] = time.monotonic()
+        try:
+            if conn.closed:
+                _last_used.pop(id(conn), None)
+                pool.putconn(conn, close=True)
+            else:
+                conn.rollback()
+                pool.putconn(conn)
+        except Exception:
+            _last_used.pop(id(conn), None)
+            try:
+                pool.putconn(conn, close=True)
+            except Exception:
+                pass
+
+
+def _is_healthy(conn):
+    """空闲较久的连接可能已被数据库端断开，取用时先探活。"""
+    if conn.closed:
+        return False
+    last = _last_used.pop(id(conn), 0)
+    if time.monotonic() - last < _IDLE_CHECK_SECONDS:
+        return True
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.close()
+        conn.rollback()
+        return True
+    except Exception:
+        return False
+
 
 def get_connection():
-    """获取数据库连接"""
-    conn = psycopg2.connect(DATABASE_URL)
-    return conn
+    """获取数据库连接（来自连接池，close() 归还）"""
+    pool = _get_pool()
+    try:
+        conn = pool.getconn()
+    except psycopg2.pool.PoolError:
+        # 池已满：临时直连，close() 时真正关闭
+        return _PooledConnection(None, psycopg2.connect(DATABASE_URL))
+
+    if _is_healthy(conn):
+        return _PooledConnection(pool, conn)
+
+    _last_used.pop(id(conn), None)
+    try:
+        pool.putconn(conn, close=True)
+    except Exception:
+        pass
+    return _PooledConnection(pool, pool.getconn())
 
 
 def init_db():
