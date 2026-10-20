@@ -400,6 +400,7 @@ async def save_death_record(player_id: str, species_name: str, level: int, kille
 
 async def delete_player_from_db(player_id: str):
     """删除玩家数据"""
+    invalidate_player_owner(player_id)
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM player_vitals WHERE player_id = %s", (player_id,))
@@ -453,8 +454,21 @@ def get_user_by_id(user_id):
     return dict(row) if row else None
 
 
+_owner_cache = {}
+_OWNER_CACHE_SECONDS = 60
+
+
 def get_player_owner(player_id):
-    """返回角色所属用户 ID；角色不存在时返回 None"""
+    """返回角色所属用户 ID；角色不存在时返回 None。
+
+    归属在角色生命周期内不会变化，缓存 60 秒以减少每个请求的数据库往返；
+    删除角色时会主动失效。
+    """
+    now = time.monotonic()
+    cached = _owner_cache.get(player_id)
+    if cached and cached[1] > now:
+        return cached[0]
+
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -462,7 +476,15 @@ def get_player_owner(player_id):
         row = cursor.fetchone()
     finally:
         conn.close()
-    return row[0] if row else None
+
+    owner = row[0] if row else None
+    if owner is not None:
+        _owner_cache[player_id] = (owner, now + _OWNER_CACHE_SECONDS)
+    return owner
+
+
+def invalidate_player_owner(player_id):
+    _owner_cache.pop(player_id, None)
 
 
 def list_players_by_user(user_id):

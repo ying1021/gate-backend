@@ -1,6 +1,7 @@
 import os
 import time
 import unittest
+from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("DATABASE_URL", "postgresql://dummy:dummy@localhost/dummy")
 
@@ -122,6 +123,43 @@ class HealthCheckTests(unittest.TestCase):
         broken = FakeConn(cursor_error=RuntimeError("gone"))
 
         self.assertFalse(db._is_healthy(broken))
+
+
+class OwnerCacheTests(unittest.TestCase):
+    def setUp(self):
+        db._owner_cache.clear()
+
+    def tearDown(self):
+        db._owner_cache.clear()
+
+    def _fake_connection(self, owner):
+        conn = MagicMock()
+        conn.cursor.return_value.fetchone.return_value = (
+            (owner,) if owner is not None else None
+        )
+        return conn
+
+    def test_owner_lookup_is_cached(self):
+        conn = self._fake_connection("u1")
+        with patch.object(db, "get_connection", return_value=conn) as get_conn:
+            self.assertEqual(db.get_player_owner("p1"), "u1")
+            self.assertEqual(db.get_player_owner("p1"), "u1")
+        self.assertEqual(get_conn.call_count, 1)
+
+    def test_missing_owner_is_not_cached(self):
+        conn = self._fake_connection(None)
+        with patch.object(db, "get_connection", return_value=conn) as get_conn:
+            self.assertIsNone(db.get_player_owner("p1"))
+            self.assertIsNone(db.get_player_owner("p1"))
+        self.assertEqual(get_conn.call_count, 2)
+
+    def test_invalidate_forces_next_lookup(self):
+        conn = self._fake_connection("u1")
+        with patch.object(db, "get_connection", return_value=conn) as get_conn:
+            db.get_player_owner("p1")
+            db.invalidate_player_owner("p1")
+            db.get_player_owner("p1")
+        self.assertEqual(get_conn.call_count, 2)
 
 
 if __name__ == "__main__":
